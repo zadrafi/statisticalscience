@@ -1,0 +1,22 @@
+---
+output:
+  html_document: default
+  
+---
+README
+
+In order to reproduce some of the figures and tables that we provide in [R&G, 2020](https://arxiv.org/abs/1909.08579), you will need to run the .Rmd file in this folder, which will also require some of the .css files attached here. 
+
+First, take the et-book.zip file and unzip it, and then you should be able to run the script.Rmd file without any issues. You must click "knit". The references.bib file and the tufte.css file should also be in the same folder, otherwise it will not compile. It may take a while as there are some loops and computer intensive scripts. 
+
+The necessary R packages to run the script include:
+
+* bayesplot
+
+* rstan
+
+* rstanarm
+
+* concurve
+
+* ggplot2

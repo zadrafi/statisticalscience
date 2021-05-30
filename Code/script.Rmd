@@ -1,0 +1,492 @@
+---
+title: "Surprisals for Statistical Science | Rafi & Greenland (2020)"
+output:
+  tufte::tufte_html:
+    toc: true
+    toc_collapsed: true
+    tufte_features: ["fonts", "background"]
+    css: "tufte.css"
+  tufte::tufte_handout:
+    citation_package: natbib
+    latex_engine: xelatex
+bibliography: references.bib
+link-citations: yes
+csl: american-medical-association.csl
+---
+
+```{r setup, include=FALSE}
+library(tufte)
+library(ggthemes)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+require(concurve)
+require(ggplot2)
+```
+
+### Valid P-values Are Uniform Under the Null Hypothesis 
+
+We assume here that there are two variables, each with a total of 100 observations. We may assume that there is no relationship whatsoever between these two variables and that the regression coefficient is equal to 0. We run 100,000 simulations of this test, and compute 100,000 P-values to see the overall distribution. 
+
+```{r}
+set.seed <- 1031
+n.sim <- 10000
+t.sim <- numeric(n.sim)
+n.samp <- 100
+
+for (i in 1:n.sim) {
+  X <- rnorm(n.samp, mean = 0, sd = 1)
+  Y <- rnorm(n.samp, mean = 0, sd = 1)
+  df <- data.frame(X, Y)
+  t <- glm(Y ~ X, data = df)
+  t.sim[i] <- coef(summary(t))[2, 4]
+}
+
+ggplot(data = NULL, aes(x = t.sim)) +
+  geom_histogram(bins = 30, col = "black", fill = "#3f8f9b", alpha = 0.75) +
+  labs(
+    title = "Distribution of P-values Under the Null Hypothesis",
+    x = "P-value"
+  ) +
+  theme_bw()
+```
+
+### Table 1: Some P-values and Their Corresponding S-values
+
+```{r}
+pvalue <- c(
+  0.99, 0.90, 0.50, 0.25, 0.125, 0.10,
+  0.05, 0.025, 0.01, 0.005, 0.0001,
+  0.0000003, 0.000000001
+)
+```
+
+### Calculate S-values
+
+```{r}
+svalue <- round((-log2(pvalue)), 2)
+
+table1 <- data.frame(pvalue, svalue)
+
+colnames(table1) <- c("P-value", "S-value")
+
+knitr::kable(table1)
+```
+
+Valid P-values are uniform under the null hypothesis and their corresponding S-values are exponentially distributed. We run the same simulation as before, but then convert the obtained P-values into S-values.
+
+```{r}
+set.seed <- 1031
+n.sim <- 10000
+t.sim <- numeric(n.sim)
+n.samp <- 100
+
+for (i in 1:n.sim) {
+  X <- rnorm(n.samp, mean = 0, sd = 1)
+  Y <- rnorm(n.samp, mean = 0, sd = 1)
+  df <- data.frame(X, Y)
+  t <- glm(Y ~ X, data = df)
+  t.sim[i] <- coef(summary(t))[2, 4]
+}
+
+
+ggplot(data = NULL, aes(x = -log2(t.sim))) +
+  geom_histogram(bins = 30, col = "black", fill = "#d46c5b", alpha = 0.75) +
+  labs(
+    title = "Distribution of S-values Under the Null Hypothesis",
+    x = "S-value (Bits of Information)"
+  ) +
+  theme_bw()
+```
+
+Despite the name, posterior predictive p-values are not actual P-values because they do not meet this uniformity criterion. Here we fit a simple Bayesian regression model with a very weakly informative prior (normal(0, 10)), where both the predictor and response variable come from the same data-generating mechanism and have the same location and scale parameters. We then calculate the posterior predictive p-value for this and plot it using the Stan plotting functions. Then, we simulate this process 100 times to examine the distribution of posterior predictive p-values and compare them to standard p-values.
+
+```{r echo=FALSE}
+library(bayesplot)
+library(rstan)
+library(rstanarm)
+color_scheme_set("red")
+
+y <- rnorm(100, mean = 0, sd = 1)
+x <- rnorm(100, mean = 0, sd = 1)
+data <- (data.frame(x, y))
+mod1 <- stan_glm(y ~ x, data = data, prior = normal(0, 10), verbose = FALSE, refresh = 0)
+yrep <- posterior_predict(mod1)
+(h <- ppc_stat(y, yrep) +
+  labs(title = "Distribution of Posterior Test Statistic"))
+
+ppc_stat_2d(y, yrep) +
+  labs(title = "Distribution of Posterior Test Statistic")
+```
+
+This was the posterior predictive p-value for one model. Now let's simulate this process and generate the distribution. 
+
+```{r}
+ppp <- rep(NA, 1000)
+
+for (i in 1:length(ppp)) {
+  y <- rnorm(100, mean = 0, sd = 1)
+  x <- rnorm(100, mean = 0, sd = 1)
+  data <- (data.frame(x, y))
+  mod1 <- stan_glm(y ~ x, data = data, prior = normal(0, 10), verbose = FALSE, refresh = 0)
+  yrep <- posterior_predict(mod1)
+  h <- ppc_stat(y, yrep)
+  ppp[i] <- h[["plot_env"]][["T_y"]]
+}
+
+ggplot(data = NULL, aes(x = ppp)) +
+  geom_histogram(bins = 30, col = "black", fill = "#3f8f9b", alpha = 0.75) +
+  labs(
+    title = "Distribution of Posterior Predictive P-values",
+    x = "Posterior Predictive P-value"
+  ) +
+  theme_bw()
+```
+As we can see, they hardly resemble the uniform appearance of p-value under the null hypothesis of zero effect.
+
+Further, the base-2 log transformation of the vector is not exponentially distributed. 
+```{r}
+
+ggplot(data = NULL, aes(x = (-log2(ppp)))) +
+  geom_histogram(bins = 30, col = "black", fill = "#d46c5b", alpha = 0.75) +
+  labs(
+    title = "Distribution of -log2(Posterior Predictive P-values)",
+    x = "-log2(Posterior Predictive P-value)"
+  ) +
+  theme_bw()
+```
+
+### Frequentist Interval Estimates Refer to the Long-Run Coverage 
+
+Here we simulate a study where one group with 100 participants has an average of 100 with a standard deviation of 20 and the second group has the same number of participants but an average of 80 and a standard deviation of 20. We compare them  using a t-test and generate 95% intervals several times, specifically 100 times, and then plot them. Since we know the mean difference is 20, we wish to see how often the interval estimates cover this true parameter value. 
+
+```{r}
+sim <- function() {
+  fake <- data.frame((x <- rnorm(100, 100, 20)), (y <- rnorm(100, 80, 20)))
+  intervals <- t.test(x = x, y = y, data = fake, conf.level = .95)$conf.int[]
+}
+
+set.seed(1031)
+
+z <- replicate(100, sim(), simplify = FALSE)
+
+df <- data.frame(do.call(rbind, z))
+df$studynumber <- (1:length(z))
+intrvl.limit <- c("lower.limit", "upper.limit", "studynumber")
+colnames(df) <- intrvl.limit
+df$point <- ((df$lower.limit + df$upper.limit) / 2)
+df$covered <- (df$lower.limit <= 20 & 20 <= df$upper.limit)
+df$coverageprob <- ((as.numeric(table(df$covered)[2]) / nrow(df) * 100))
+
+library(ggplot2)
+
+
+ggplot(data = df, aes(x = studynumber, y = point, ymin = lower.limit, ymax = upper.limit)) +
+  geom_pointrange(mapping = aes(color = covered), size = .40) +
+  geom_hline(yintercept = 20, lty = 1, color = "red", alpha = 0.5) +
+  coord_flip() +
+  labs(
+    title = "Simulated 95% Intervals",
+    x = "Study Number",
+    y = "Estimate",
+    subtitle = "Population Parameter is 20"
+  ) +
+  theme_bw() + # use a white background
+  theme(legend.position = "none") +
+  annotate(
+    geom = "text", x = 102, y = 30,
+    label = "Coverage (%) =", size = 2.5, color = "black"
+  ) +
+  annotate(
+    geom = "text", x = 102, y = 35,
+    label = df$coverageprob, size = 2.5, color = "black"
+  )
+```
+
+Taken from the Brown et al. data [DOI: 10.1001/jama.2017.3415](https://doi.org/10.1001/jama.2017.3415)
+
+Here we take the reported statistics from the Brown et al. data in order to run statistical tests of different test hypotheses and use those results to construct various functions.
+
+We calculate the standard errors from the point estimate and the confidence (compatibility) limits
+
+```{r}
+se <- log(2.59 / 0.997) / 3.92
+
+logUL <- log(2.59)
+logLL <- log(0.997)
+
+logpoint <- log(1.61)
+
+logpoint + (1.96 * se)
+logpoint - (1.96 * se)
+```
+
+### Table 2: P-values, S-values, and Relative Likelihood Ratios (LR) for Targeted Test Hypotheses About Hazard Ratios (HR) for [Brown et al.](https://doi.org/10.1001/jama.2017.3415)
+
+### Compute P-values, S-values, and Likelihood Ratios For [Brown et al.](https://doi.org/10.1001/jama.2017.3415)
+
+```{r}
+testhypothesis <- c(
+  "Halving of hazard", "No effect (null)", "Point estimate",
+  "Doubling of hazard", "Tripling of hazard", "Quintupling of hazard"
+)
+hazardratios <- c(0.5, 1, 1.61, 2, 3, 5)
+pvals <- c(1.6e-06, 0.05, 1.00, 0.37, 0.01, 3.2e-06)
+svals <- round(-log2(pvals), 3)
+lr <- round(c(
+  exp((((log(0.5 / 1.61)) / se)^2) / (2)),
+  exp((((log(1 / 1.61)) / se)^2) / (2)),
+  exp((((log(1.61 / 1.61)) / se)^2) / (2)),
+  exp((((log(2 / 1.61)) / se)^2) / (2)),
+  exp((((log(3 / 1.61)) / se)^2) / (2)),
+  exp((((log(5 / 1.61)) / se)^2) / (2))
+), 3)
+
+LR <- formatC(lr, format = "e", digits = 2)
+
+table2 <- data.frame(
+  testhypothesis, hazardratios,
+  pvals, svals, LR
+)
+
+
+colnames(table2) <- c(
+  "Test Hypothesis", "Hazard Ratios",
+  "P-values", "S-values", "Likelihood Ratio Statistics"
+)
+
+knitr::kable(table2)
+```
+
+### Plot the point estimate and 95% compatibility interval using `ggplot2`
+
+```{r}
+label <- ("Brown et al.")
+point <- (1.61)
+lower <- (0.997)
+upper <- (2.59)
+
+df <- data.frame(
+  label, point,
+  lower, upper
+)
+```
+
+Here we plot the 95% interval estimate reported from the high-dimensional propensity score analysis.
+
+```{r}
+library(ggplot2)
+
+ggplot(data = df, mapping = aes(x = label, y = point, ymin = lower, ymax = upper)) +
+  geom_pointrange(color = "black", size = 1.1) +
+  geom_hline(yintercept = 1, lty = 1, color = "dark red") +
+  coord_flip() +
+  scale_y_log10(breaks = scales::pretty_breaks(n = 10)) +
+  labs(
+    title = "Association Between Serotonergic Antidepressant Exposure \nDuring Pregnancy and Child Autism Spectrum Disorder",
+    subtitle = "95% Compatibility Interval",
+    caption = "Figure 2",
+    x = "Study",
+    y = "Hazard Ratio"
+  ) +
+  theme_minimal()
+```
+
+In order to use this information to construct a p-value function, we will need to install the `concurve` R package. 
+
+```{r}
+library(concurve)
+```
+
+Enter point estimates and compatibility limits and produce all possible intervals + P-values + S-values. 
+This is calculated assuming normality.
+
+```{r}
+curve1 <- curve_rev(point = 1.61, LL = 0.997, UL = 2.59, measure = "ratio", steps = 10000)
+```
+
+Stored in data frame "curve1"
+
+### Figure 3: P-value (Compatibility) Function
+
+Plot the P-value (Compatibility) function of the [Brown et al.](https://doi.org/10.1001/jama.2017.3415) data with `ggplot2` graphics.
+
+```{r}
+
+ggcurve(curve1[[1]], type = "c", measure = "ratio", nullvalue = T) +
+  labs(
+    title = "P-Value (Compatibility) as a Function of the Hazard Ratio",
+    subtitle = "Association Between Serotonergic Antidepressant Exposure \nDuring Pregnancy and Child Autism Spectrum Disorder",
+    x = "Hazard Ratio (HR)",
+    y = "p-value\n(Compatibility)"
+  ) +
+  geom_vline(xintercept = 1.61, lty = 1, color = "gray", alpha = 0.2) +
+  geom_vline(xintercept = 2.59, lty = 1, color = "gray", alpha = 0.2) +
+  theme_light()
+```
+
+We can also see how consistent these results are with previous studies conducted by the same research group, given the overlap of the functions. 
+
+```{r echo=TRUE, fig.height=4.5, fig.width=6}
+curve1 <- curve_rev(point = 1.61, LL = 0.997, UL = 2.59, measure = "ratio", steps = 10000)
+
+curve2 <- curve_rev(
+  point = 1.7, LL = 1.1, UL = 2.6,
+  type = "c", measure = "ratio", steps = 10000
+)
+```
+
+
+```{r echo=TRUE, fig.height=4.5, fig.width=6}
+lik2 <- curve_rev(
+  point = 1.7, LL = 1.1, UL = 2.6,
+  type = "l", measure = "ratio", steps = 10000
+)
+
+lik1 <- curve_rev(
+  point = 1.61, LL = 0.997, UL = 2.59,
+  type = "l", measure = "ratio", steps = 10000
+)
+```
+
+Let's compare the relative likelihood functions from both studies from this research group to see how consistent the results are. 
+
+```{r echo=TRUE, fig.height=4.5, fig.width=6}
+(plot_compare(
+  data1 = lik1[[1]], data2 = lik2[[1]],
+  type = "l1", measure = "ratio", nullvalue = TRUE,
+  title = "Brown et al. 2017. J Clin Psychiatry. vs. \nBrown et al. 2017. JAMA.",
+  subtitle = "J Clin Psychiatry: OR = 1.7, 1/6.83 LI: LL = 1.1, UL = 2.6 \nJAMA: HR = 1.61, 1/6.83 LI: LL = 0.997, UL = 2.59", xaxis = expression(Theta ~ "= Hazard Ratio / Odds Ratio")
+))
+```
+
+and the p-value functions.
+
+```{r echo=TRUE, fig.height=4.5, fig.width=6}
+(plot_compare(
+  data1 = curve1[[1]], data2 = curve2[[1]],
+  type = "c", measure = "ratio", nullvalue = TRUE,
+  title = "Brown et al. 2017. J Clin Psychiatry. vs. \nBrown et al. 2017. JAMA.",
+  subtitle = "J Clin Psychiatry: OR = 1.7, 1/6.83 LI: LL = 1.1, UL = 2.6 \nJAMA: HR = 1.61, 1/6.83 LI: LL = 0.997, UL = 2.59", xaxis = expression(Theta ~ "= Hazard Ratio / Odds Ratio")
+))
+```
+
+### Figure 4: S-value (Suprisal) Function
+
+Plot the S-value (Surprisal) function of the [Brown et al.](https://doi.org/10.1001/jama.2017.3415) data with `ggplot2` graphics.
+ 
+```{r}
+ggcurve(
+  data = curve1[[1]], type = "s", measure = "ratio", nullvalue = TRUE,
+  title = "S-Value (Surprisal) as a Function of the Hazard Ratio",
+  subtitle = "Association Between Serotonergic Antidepressant Exposure \nDuring Pregnancy and Child Autism Spectrum Disorder",
+  xaxis = "Hazard Ratio", yaxis1 = "S-value (bits of information)"
+)
+```
+
+Calculate and Plot Likelihood (Support) Intervals.
+
+```{r}
+hrvalues <- seq(from = 0.65, to = 3.98, by = 0.01)
+
+se <- log(2.59 / 0.997) / 3.92
+
+zscore <- sapply(
+  hrvalues,
+  function(i) (log(i / 1.61) / se)
+)
+```
+
+### Figure S1: Relative Likelihood MLR
+
+```{r}
+support <- exp((-zscore^2) / 2)
+
+likfunction <- data.frame(hrvalues, zscore, support)
+
+ggplot(data = likfunction, mapping = aes(x = hrvalues, y = support)) +
+  geom_line() +
+  geom_ribbon(aes(x = hrvalues, ymin = min(support), ymax = support),
+    fill = "#239a98", alpha = 0.30
+  ) +
+  labs(
+    x = "Hazard Ratio (HR)",
+    y = "Relative Likelihood 1/MLR"
+  ) +
+  theme_light() +
+  theme(
+    axis.title.x = element_text(size = 13),
+    axis.title.y = element_text(size = 13)
+  ) +
+  scale_x_log10(breaks = scales::pretty_breaks(n = 10)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  theme(text = element_text(size = 15)) +
+  theme(
+    plot.title = element_text(size = 16),
+    plot.subtitle = element_text(size = 12),
+    plot.caption = element_text(size = 8)
+  )
+```
+
+upward-concave parabola $Z^{2}/2$ = $-ln(MLR)$ which is the likelihood analog of the S-value function
+
+```{r}
+support <- (zscore^2) / 2
+
+likfunction <- data.frame(hrvalues, zscore, support)
+
+ggplot(data = likfunction, mapping = aes(x = hrvalues, y = support)) +
+  geom_line() +
+  geom_ribbon(aes(x = hrvalues, ymin = support, ymax = max(support)),
+    fill = "#239a98", alpha = 0.30
+  ) +
+  labs(
+    x = "Hazard Ratio (HR)",
+    y = "ln(MLR) "
+  ) +
+  theme_light() +
+  theme(
+    axis.title.x = element_text(size = 13),
+    axis.title.y = element_text(size = 13)
+  ) +
+  scale_x_log10(breaks = scales::pretty_breaks(n = 10)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  theme(text = element_text(size = 15)) +
+  theme(
+    plot.title = element_text(size = 16),
+    plot.subtitle = element_text(size = 12),
+    plot.caption = element_text(size = 8)
+  )
+```
+
+### Figure S2: Deviance Statistics -2ln(MLR)
+
+```{r}
+support <- (zscore^2)
+
+likfunction <- data.frame(hrvalues, zscore, support)
+
+ggplot(data = likfunction, mapping = aes(x = hrvalues, y = support)) +
+  geom_line() +
+  geom_ribbon(aes(x = hrvalues, ymin = support, ymax = max(support)),
+    fill = "#239a98", alpha = 0.30
+  ) +
+  labs(
+    x = "Hazard Ratio (HR)",
+    y = " Deviance Statistic 2ln(MLR) "
+  ) +
+  theme_light() +
+  theme(
+    axis.title.x = element_text(size = 13),
+    axis.title.y = element_text(size = 13)
+  ) +
+  scale_x_log10(breaks = scales::pretty_breaks(n = 10)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  theme(text = element_text(size = 15)) +
+  theme(
+    plot.title = element_text(size = 16),
+    plot.subtitle = element_text(size = 12),
+    plot.caption = element_text(size = 8)
+  )
+```
